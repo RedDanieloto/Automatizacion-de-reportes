@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from procesar import procesar_datos
 from excel import actualizar_excel
-from api import obtener_kpis   # 🔥 ESTE ES EL BUENO
+from api import obtener_kpis, descargar_excel_datos
 
 def main():
     print("""
@@ -10,9 +10,10 @@ def main():
 1. Diario (ayer)
 2. Semanal (semana pasada)
 3. Mensual (desde el día 1 hasta hoy)
+4. Actualizar data (Descargar archivo Excel)
 """)
 
-    opcion = input("Selecciona una opción (1/2/3): ")
+    opcion = input("Selecciona una opción (1/2/3/4): ")
 
     hoy = datetime.now()
 
@@ -31,10 +32,16 @@ def main():
         fin = hoy
         tipo = "mensual"
 
+    elif opcion == "4":
+        print("\nActualizando datos...")
+        descargar_excel_datos()
+        return
+
     else:
         print("Opción inválida")
         return
 
+    print("\nIniciando proceso...")
     print("Generando reporte...")
 
     df_mes, df_dia = procesar_datos(inicio, fin)
