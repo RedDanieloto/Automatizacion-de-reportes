@@ -33,10 +33,11 @@ def procesar_datos(inicio, fin):
     ]
 
     # =========================
-    # 🔥 KPIs → SOLO EL DÍA
+    # 🔥 BD → RANGO SELECCIONADO (DIA, SEMANA O MES)
     # =========================
     df_dia = df[
-        (df["Inicio"].dt.date == inicio.date())
+        (df["Inicio"].dt.date >= inicio.date()) &
+        (df["Inicio"].dt.date <= fin.date())
     ]
 
     return df_mes, df_dia

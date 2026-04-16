@@ -8,8 +8,8 @@ def main():
 ¿Qué reporte quieres generar?
 
 1. Diario (ayer)
-2. Semanal
-3. Mensual
+2. Semanal (semana pasada)
+3. Mensual (desde el día 1 hasta hoy)
 """)
 
     opcion = input("Selecciona una opción (1/2/3): ")
@@ -39,7 +39,7 @@ def main():
 
     df_mes, df_dia = procesar_datos(inicio, fin)
 
-    kpis = obtener_kpis(inicio, inicio)  # SOLO día
+    kpis = obtener_kpis(inicio, fin)  # Obtiene los KPIs de todo el rango seleccionado
 
     archivo = actualizar_excel(df_mes, df_dia, kpis, inicio, fin, tipo)
 

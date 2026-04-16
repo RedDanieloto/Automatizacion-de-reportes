@@ -52,7 +52,16 @@ def actualizar_excel(df_mes, df_dia, kpis, inicio, fin, tipo):
     # =========================
     # FECHA
     # =========================
-    ws_dash.range("C1").value = f"DASHBOARD DOWNTIME SEWING {inicio.date()}"
+    if tipo == "mensual":
+        meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        nombre_mes = meses[inicio.month]
+        texto_fecha = f"{nombre_mes.upper()} {inicio.year}"
+    elif tipo == "semanal":
+        texto_fecha = f"{inicio.date()} AL {fin.date()}"
+    else:
+        texto_fecha = str(inicio.date())
+
+    ws_dash.range("C1").value = f"DASHBOARD DOWNTIME SEWING {texto_fecha}"
 
     # =========================
     # CONFIG PDF
