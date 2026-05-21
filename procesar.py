@@ -25,19 +25,23 @@ def procesar_datos(inicio, fin):
     # =========================
     # 🔥 BD → TODO EL MES
     # =========================
-    inicio_mes = inicio.replace(day=1)
+    import datetime as dt
+    inicio_mes = dt.datetime.combine(inicio.replace(day=1).date(), dt.time.min)
+    fin_completo = dt.datetime.combine(fin.date(), dt.time.max)
 
     df_mes = df[
         (df["Inicio"] >= inicio_mes) &
-        (df["Inicio"] <= fin)
+        (df["Inicio"] <= fin_completo)
     ]
 
     # =========================
     # 🔥 BD → RANGO SELECCIONADO (DIA, SEMANA O MES)
     # =========================
+    inicio_completo = dt.datetime.combine(inicio.date(), dt.time.min)
+
     df_dia = df[
-        (df["Inicio"].dt.date >= inicio.date()) &
-        (df["Inicio"].dt.date <= fin.date())
+        (df["Inicio"] >= inicio_completo) &
+        (df["Inicio"] <= fin_completo)
     ]
 
     return df_mes, df_dia

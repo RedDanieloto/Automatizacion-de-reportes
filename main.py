@@ -42,6 +42,9 @@ def main():
         return
 
     print("\nIniciando proceso...")
+    print("Descargando últimos datos...")
+    descargar_excel_datos()  # Descarga automática por defecto (area_id=1)
+
     print("Generando reporte...")
 
     df_mes, df_dia = procesar_datos(inicio, fin)
