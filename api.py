@@ -41,7 +41,6 @@ def _calcular_abiertos_historicos(inicio, fin, area_id=1):
         df["Fin"] = pd.to_datetime(df["Fin"], errors="coerce")
         df = df[df["Inicio"].notna()].copy()
 
-        # Filtrado opcional por area si existe la columna y hay coincidencias.
         mapa_areas = {
             1: ["costura", "sewing"],
             2: ["corte", "cutting"]
@@ -61,27 +60,35 @@ def _calcular_abiertos_historicos(inicio, fin, area_id=1):
         print(f"No se pudo calcular abiertos historicos: {e}")
         return None
 
-def descargar_excel_datos(area_id=1):
-    hoy = datetime.now()
-    
-    # Calcular el primer día del mes anterior
-    if hoy.month == 1:
-        primer_dia_prev = hoy.replace(year=hoy.year - 1, month=12, day=1)
-    else:
-        primer_dia_prev = hoy.replace(month=hoy.month - 1, day=1)
+def descargar_excel_datos(area_id=1, inicio=None, fin=None):
+    if inicio is None or fin is None:
+        hoy = datetime.now()
         
-    # Calcular el último día del mes actual
-    primer_dia_act = hoy.replace(day=1)
-    if primer_dia_act.month == 12:
-        siguiente_mes = primer_dia_act.replace(year=primer_dia_act.year + 1, month=1)
+        # Calcular el primer día del mes anterior
+        if hoy.month == 1:
+            primer_dia_prev = hoy.replace(year=hoy.year - 1, month=12, day=1)
+        else:
+            primer_dia_prev = hoy.replace(month=hoy.month - 1, day=1)
+            
+        # Calcular el último día del mes actual
+        primer_dia_act = hoy.replace(day=1)
+        if primer_dia_act.month == 12:
+            siguiente_mes = primer_dia_act.replace(year=primer_dia_act.year + 1, month=1)
+        else:
+            siguiente_mes = primer_dia_act.replace(month=primer_dia_act.month + 1)
+        ultimo_dia_act = siguiente_mes - timedelta(days=1)
+        
+        fecha_desde = primer_dia_prev
+        fecha_hasta = ultimo_dia_act
     else:
-        siguiente_mes = primer_dia_act.replace(month=primer_dia_act.month + 1)
-    ultimo_dia_act = siguiente_mes - timedelta(days=1)
-    
+        # Asegurarse de descargar desde el primer día del mes de inicio para el df_mes
+        fecha_desde = inicio.replace(day=1)
+        fecha_hasta = fin
+
     url = f"https://tiemposapi.danito.tech/api/areas/{area_id}/reportes/exportarexcel"
     params = {
-        "from": primer_dia_prev.strftime("%Y-%m-%d"),
-        "to": ultimo_dia_act.strftime("%Y-%m-%d")
+        "from": fecha_desde.strftime("%Y-%m-%d"),
+        "to": fecha_hasta.strftime("%Y-%m-%d")
     }
     
     print(f"Descargando datos actualizados del {params['from']} al {params['to']}...")

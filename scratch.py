@@ -12,4 +12,3 @@ try:
     print("Columnas:", list(df.columns))
 except Exception as e:
     print("Error leyendo:", e)
-

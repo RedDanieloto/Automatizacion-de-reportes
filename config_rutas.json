@@ -1,0 +1,12 @@
+{
+    "SEWING": {
+        "plantilla": "/Users/red/Desktop/DASHBOARD_COSTURA_DT.xlsm",
+        "salida": "/Users/red/Desktop/REPORTES COSTURA"
+    },
+    "CUTTING": {
+        "plantilla": "/Users/red/Desktop/DASHBOARD_CORTE_DT.xlsm",
+        "salida": "/Users/red/Desktop/REPORTES CORTE"
+    },
+    "last_auto_run": "2026-06-18",
+    "last_auto_status": "Éxito (diario) a las 07:52:27"
+}

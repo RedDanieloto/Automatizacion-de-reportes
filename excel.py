@@ -55,7 +55,7 @@ def actualizar_excel(df_mes, df_dia, kpis, inicio, fin, tipo, ruta_salida=None, 
     ws_dash.range("A1").value = f"MTTR\n{kpis['mttr']['data']['mttr']['horas']:.2f} h"
     ws_dash.range("A2").value = f"MTBF\n{kpis['mtbf']['data']['mtbf']['horas']:.2f} h"
     ws_dash.range("A3").value = f"DOWNTIME\n{kpis['downtime']['data']['tiempo_total']['horas']:.2f} h"
-    ws_dash.range("A4").value = f"REPORTES ABIERTOS\n{kpis['abiertos']['data']['reportes_abiertos']['abiertos']}"
+    ws_dash.range("A4").value = "REPORTES ABIERTOS\n0"
 
     # =========================
     # FECHA Y ÁREA
@@ -64,7 +64,7 @@ def actualizar_excel(df_mes, df_dia, kpis, inicio, fin, tipo, ruta_salida=None, 
         meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
         nombre_mes = meses[inicio.month]
         texto_fecha = f"{nombre_mes.upper()} {inicio.year}"
-    elif tipo == "semanal":
+    elif inicio.date() != fin.date():
         texto_fecha = f"{inicio.date()} AL {fin.date()}"
     else:
         texto_fecha = str(inicio.date())
