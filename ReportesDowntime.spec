@@ -5,7 +5,10 @@ a = Analysis(
     ['gui.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('config_rutas.json', '.'),
+        ('DASHBOARD_COSTURA_DT.xlsm', '.')
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -42,12 +45,4 @@ coll = COLLECT(
     upx_exclude=[],
     name='ReportesDowntime',
 )
-app = BUNDLE(
-    coll,
-    name='ReportesDowntime.app',
-    icon=None,
-    bundle_identifier=None,
-    info_plist={
-        'NSAppleEventsUsageDescription': 'Esta aplicación requiere automatizar Microsoft Excel para generar reportes.',
-    },
-)
+

@@ -1,0 +1,12 @@
+{
+    "SEWING": {
+        "plantilla": "C:/Users/cabrern/Desktop/REPORTES_COSTURA/DASHBOARD_COSTURA_DT.xlsm",
+        "salida": "C:/Users/cabrern/Desktop/REPORTES_COSTURA"
+    },
+    "CUTTING": {
+        "plantilla": "C:/Users/cabrern/Desktop/REPORTES_CORTE/DASHBOARD_CORTE_DT.xlsm",
+        "salida": "C:/Users/cabrern/Desktop/REPORTES_CORTE"
+    },
+    "last_auto_run": "2026-10-02",
+    "last_auto_status": "Éxito (diario) a las 09:05:54"
+}

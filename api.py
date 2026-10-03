@@ -1,7 +1,7 @@
 import requests
 import os
 import pandas as pd
-from config import BASE_URL, RUTA_DATOS
+from config import BASE_URL, API_HOST, RUTA_DATOS, verificar_cancelacion
 from datetime import datetime, timedelta
 
 
@@ -60,7 +60,8 @@ def _calcular_abiertos_historicos(inicio, fin, area_id=1):
         print(f"No se pudo calcular abiertos historicos: {e}")
         return None
 
-def descargar_excel_datos(area_id=1, inicio=None, fin=None):
+def descargar_excel_datos(area_id=1, inicio=None, fin=None, cancel_event=None):
+    verificar_cancelacion(cancel_event)
     if inicio is None or fin is None:
         hoy = datetime.now()
         
@@ -85,14 +86,16 @@ def descargar_excel_datos(area_id=1, inicio=None, fin=None):
         fecha_desde = inicio.replace(day=1)
         fecha_hasta = fin
 
-    url = f"https://tiemposapi.danito.tech/api/areas/{area_id}/reportes/exportarexcel"
+    url = f"{API_HOST}/api/areas/{area_id}/reportes/exportarexcel"
     params = {
         "from": fecha_desde.strftime("%Y-%m-%d"),
         "to": fecha_hasta.strftime("%Y-%m-%d")
     }
     
     print(f"Descargando datos actualizados del {params['from']} al {params['to']}...")
-    response = requests.get(url, params=params)
+    verificar_cancelacion(cancel_event)
+    response = requests.get(url, params=params, timeout=(10, 60))
+    verificar_cancelacion(cancel_event)
     
     if response.status_code == 200:
         # Crear la carpeta data si no existe
@@ -103,17 +106,29 @@ def descargar_excel_datos(area_id=1, inicio=None, fin=None):
     else:
         print("Error al descargar los datos. Status:", response.status_code)
 
-def obtener_kpis(inicio, fin, area_id=1):
+def obtener_kpis(inicio, fin, area_id=1, cancel_event=None):
+    verificar_cancelacion(cancel_event)
     params = {
         "inicio": inicio.strftime("%Y-%m-%d"),
         "fin": fin.strftime("%Y-%m-%d"),
         "area_id": area_id
     }
 
-    mttr = requests.get(f"{BASE_URL}/mttr", params=params).json()
-    mtbf = requests.get(f"{BASE_URL}/mtbf", params=params).json()
-    downtime = requests.get(f"{BASE_URL}/tiempo-total", params=params).json()
-    abiertos = requests.get(f"{BASE_URL}/reportes-abiertos", params=params).json()
+    res_mttr = requests.get(f"{BASE_URL}/mttr", params=params, timeout=(10, 30))
+    verificar_cancelacion(cancel_event)
+    mttr = res_mttr.json()
+
+    res_mtbf = requests.get(f"{BASE_URL}/mtbf", params=params, timeout=(10, 30))
+    verificar_cancelacion(cancel_event)
+    mtbf = res_mtbf.json()
+
+    res_dt = requests.get(f"{BASE_URL}/tiempo-total", params=params, timeout=(10, 30))
+    verificar_cancelacion(cancel_event)
+    downtime = res_dt.json()
+
+    res_ab = requests.get(f"{BASE_URL}/reportes-abiertos", params=params, timeout=(10, 30))
+    verificar_cancelacion(cancel_event)
+    abiertos = res_ab.json()
 
     # Para periodos cerrados (ayer/semana pasada), usa valor historico al cierre de 'fin'.
     if fin.date() < datetime.now().date():

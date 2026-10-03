@@ -1,7 +1,8 @@
 import sys
 import os
 
-BASE_URL = "https://tiemposapi.danito.tech/api/estadisticas"
+API_HOST = "https://api-mantenimiento.gstmxcloud.com"
+BASE_URL = f"{API_HOST}/api/estadisticas"
 
 def obtener_ruta_base():
     if getattr(sys, 'frozen', False):
@@ -20,3 +21,13 @@ RUTA_BASE = obtener_ruta_base()
 RUTA_DATOS = os.path.join(RUTA_BASE, "data/datos.xlsx")
 RUTA_DASHBOARD = os.path.join(RUTA_BASE, "DASHBOARD_COSTURA_DT.xlsm")
 RUTA_OUTPUT = os.path.join(RUTA_BASE, "output/")
+
+
+class ProcesoCanceladoException(Exception):
+    """Excepción lanzada cuando el usuario cancela la ejecución del proceso."""
+    pass
+
+
+def verificar_cancelacion(cancel_event=None):
+    if cancel_event is not None and cancel_event.is_set():
+        raise ProcesoCanceladoException("El proceso fue cancelado por el usuario.")

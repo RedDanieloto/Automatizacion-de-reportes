@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from procesar import procesar_datos
 from excel import actualizar_excel
 from api import obtener_kpis, descargar_excel_datos
-from config import RUTA_BASE, RUTA_DASHBOARD, RUTA_OUTPUT
+from config import RUTA_BASE, RUTA_DASHBOARD, RUTA_OUTPUT, ProcesoCanceladoException, verificar_cancelacion
 
 RUTA_CONFIG_JSON = os.path.join(RUTA_BASE, "config_rutas.json")
 
@@ -51,7 +51,7 @@ def cargar_configuracion_rutas():
                         config_guardada[area] = config_defecto[area]
                     else:
                         for k in ["plantilla", "salida"]:
-                            if k not in config_guardada[area]:
+                            if k not in config_guardada[area] or not os.path.exists(config_guardada[area][k]):
                                 config_guardada[area][k] = config_defecto[area][k]
                 if "last_auto_run" not in config_guardada:
                     config_guardada["last_auto_run"] = config_defecto["last_auto_run"]
@@ -72,6 +72,31 @@ def guardar_configuracion_rutas(config):
 
 # Cargar configuración global al iniciar
 config_rutas = cargar_configuracion_rutas()
+
+# --- VARIABLES DE CANCELACIÓN Y CONTROL ---
+cancel_event = threading.Event()
+current_xl_app = None
+xl_app_lock = threading.Lock()
+
+def registrar_app_excel(app_inst):
+    global current_xl_app
+    with xl_app_lock:
+        current_xl_app = app_inst
+
+def cancelar_proceso():
+    if not cancel_event.is_set():
+        cancel_event.set()
+        estado_var.set("Cancelando proceso...")
+        btn_cancelar.config(state=tk.DISABLED)
+        
+        with xl_app_lock:
+            global current_xl_app
+            if current_xl_app is not None:
+                try:
+                    current_xl_app.kill()
+                except Exception as e:
+                    print("Error al cerrar instancia de Excel:", e)
+                current_xl_app = None
 
 def seleccionar_ruta():
     directorio = filedialog.askdirectory(title="Selecciona la carpeta de destino")
@@ -172,19 +197,27 @@ def ejecutar_reporte_nucleo(inicio, fin, tipo, area_seleccionada, ruta_salida, r
     # Sewing = 1, Cutting = 2
     area_id = 1 if area_seleccionada == "SEWING" else 2
 
+    verificar_cancelacion(cancel_event)
+
     if callback_estado:
         callback_estado(f"Descargando últimos datos de {area_seleccionada}...")
-    descargar_excel_datos(area_id, inicio=inicio, fin=fin)
+    descargar_excel_datos(area_id, inicio=inicio, fin=fin, cancel_event=cancel_event)
+
+    verificar_cancelacion(cancel_event)
 
     if callback_estado:
         callback_estado(f"Generando reporte {tipo} ({area_seleccionada})...")
     
     df_mes, df_dia = procesar_datos(inicio, fin)
     
+    verificar_cancelacion(cancel_event)
+
     if callback_estado:
         callback_estado(f"Obteniendo KPIs de {area_seleccionada}...")
-    kpis = obtener_kpis(inicio, fin, area_id)
+    kpis = obtener_kpis(inicio, fin, area_id, cancel_event=cancel_event)
     
+    verificar_cancelacion(cancel_event)
+
     if callback_estado:
         callback_estado(f"Actualizando Excel ({area_seleccionada})...")
     
@@ -193,9 +226,27 @@ def ejecutar_reporte_nucleo(inicio, fin, tipo, area_seleccionada, ruta_salida, r
         
     archivo = actualizar_excel(
         df_mes, df_dia, kpis, inicio, fin, tipo,
-        ruta_salida=ruta_salida, ruta_plantilla=ruta_plantilla, area=area_seleccionada
+        ruta_salida=ruta_salida, ruta_plantilla=ruta_plantilla, area=area_seleccionada,
+        cancel_event=cancel_event, on_app_created=registrar_app_excel
     )
     return archivo
+
+def mostrar_error_comun(e):
+    msg_err = str(e)
+    if "-2146827284" in msg_err or "-2147352567" in msg_err:
+        msg_err = (
+            "Error de comunicación con Microsoft Excel (COM Error -2146827284):\n\n"
+            "Causas y Soluciones más comunes:\n\n"
+            "1. 📄 El archivo PDF ya está abierto:\n"
+            "   Si tienes abierto el PDF generado anteriormente (en Adobe Reader, Chrome, Edge, etc.), Excel no puede sobreescribirlo.\n"
+            "   👉 Cierra el visor de PDF e intenta de nuevo.\n\n"
+            "2. 📊 Excel tiene una celda en edición:\n"
+            "   Si Excel está abierto en tu computadora y tienes el cursor parpadeando dentro de una celda o un mensaje de alerta abierto.\n"
+            "   👉 Cierra Excel o presiona ESC en Excel e intenta de nuevo.\n\n"
+            "3. 📂 Archivo o plantilla bloqueada:\n"
+            "   Asegúrate de que la plantilla (.xlsm) no esté abierta exclusivamente por otro usuario en la red."
+        )
+    messagebox.showerror("Error", f"Ocurrió un error:\n\n{msg_err}")
 
 def procesar_reporte(inicio, fin, tipo):
     ruta_salida = ruta_salida_var.get()
@@ -209,15 +260,91 @@ def procesar_reporte(inicio, fin, tipo):
         archivo = ejecutar_reporte_nucleo(
             inicio, fin, tipo, area_seleccionada, ruta_salida, ruta_plantilla, callback_estado
         )
-        estado_var.set(f"Reporte {tipo} generado.")
+        estado_var.set(f"Reporte {tipo} generado ({area_seleccionada}).")
         messagebox.showinfo("Éxito", f"Reporte listo y guardado en:\n{archivo}")
         
+    except ProcesoCanceladoException:
+        estado_var.set("Proceso cancelado por el usuario.")
     except Exception as e:
-        estado_var.set("Error en el proceso.")
-        messagebox.showerror("Error", f"Ocurrió un error:\n{str(e)}")
+        if cancel_event.is_set():
+            estado_var.set("Proceso cancelado por el usuario.")
+        else:
+            estado_var.set("Error en el proceso.")
+            mostrar_error_comun(e)
     finally:
+        with xl_app_lock:
+            global current_xl_app
+            current_xl_app = None
         app.after(0, detener_loader)
         app.after(0, habilitar_botones)
+
+def procesar_reporte_ambas(inicio, fin, tipo):
+    try:
+        # Guardar en config cualquier cambio hecho en la UI para el área actual
+        area_actual = area_var.get()
+        if ruta_salida_var.get():
+            config_rutas[area_actual]["salida"] = ruta_salida_var.get()
+        if ruta_plantilla_var.get():
+            config_rutas[area_actual]["plantilla"] = ruta_plantilla_var.get()
+        guardar_configuracion_rutas(config_rutas)
+
+        # Validaciones de rutas para ambas áreas
+        for area_nombre in ["SEWING", "CUTTING"]:
+            salida = config_rutas[area_nombre].get("salida")
+            plantilla = config_rutas[area_nombre].get("plantilla")
+            if not salida:
+                messagebox.showerror("Error", f"Falta configurar la carpeta de destino para {area_nombre}.")
+                return
+            if not plantilla or not os.path.exists(plantilla):
+                messagebox.showerror("Error", f"No se encuentra la plantilla de Excel para {area_nombre}:\n{plantilla}")
+                return
+
+        def callback_estado(msg):
+            estado_var.set(msg)
+
+        # 1. Ejecutar SEWING
+        callback_estado(f"Costura (1/2): Generando reporte {tipo}...")
+        archivo_sewing = ejecutar_reporte_nucleo(
+            inicio, fin, tipo, "SEWING",
+            config_rutas["SEWING"]["salida"],
+            config_rutas["SEWING"]["plantilla"],
+            callback_estado
+        )
+
+        verificar_cancelacion(cancel_event)
+
+        # 2. Ejecutar CUTTING
+        callback_estado(f"Corte (2/2): Generando reporte {tipo}...")
+        archivo_cutting = ejecutar_reporte_nucleo(
+            inicio, fin, tipo, "CUTTING",
+            config_rutas["CUTTING"]["salida"],
+            config_rutas["CUTTING"]["plantilla"],
+            callback_estado
+        )
+
+        estado_var.set(f"Reportes {tipo} generados para ambas áreas.")
+        messagebox.showinfo(
+            "Éxito",
+            f"¡Reportes listos para ambas áreas!\n\n"
+            f"🧵 Costura (SEWING):\n{archivo_sewing}\n\n"
+            f"✂️ Corte (CUTTING):\n{archivo_cutting}"
+        )
+
+    except ProcesoCanceladoException:
+        estado_var.set("Proceso cancelado por el usuario.")
+    except Exception as e:
+        if cancel_event.is_set():
+            estado_var.set("Proceso cancelado por el usuario.")
+        else:
+            estado_var.set("Error en el proceso.")
+            mostrar_error_comun(e)
+    finally:
+        with xl_app_lock:
+            global current_xl_app
+            current_xl_app = None
+        app.after(0, detener_loader)
+        app.after(0, habilitar_botones)
+
 
 def es_primer_dia_habil_del_mes(fecha):
     if fecha.weekday() >= 5:
@@ -345,11 +472,7 @@ def run_scheduler():
             print("Error en scheduler loop:", ex)
         time.sleep(30)
 
-def iniciar_hilo_generar():
-    if not ruta_salida_var.get():
-        messagebox.showwarning("Advertencia", "Por favor selecciona una ruta de destino primero.")
-        return
-        
+def obtener_parametros_periodo():
     seleccion = cb_periodo.get()
     hoy = datetime.now()
     
@@ -376,7 +499,7 @@ def iniciar_hilo_generar():
             tipo = "diario"
         except ValueError:
             messagebox.showerror("Error", "La fecha seleccionada no es válida. Por favor, verifica el día y mes.")
-            return
+            return None, None, None
     elif seleccion == "Mes Completo":
         try:
             y, m = obtener_anio_mes()
@@ -385,28 +508,52 @@ def iniciar_hilo_generar():
             tipo = "mensual"
         except ValueError:
             messagebox.showerror("Error", "El mes seleccionado no es válido.")
-            return
+            return None, None, None
     elif seleccion == "Rango de Fechas":
         try:
             inicio = obtener_fecha_rango_desde()
             fin = obtener_fecha_rango_hasta()
             if inicio > fin:
                 messagebox.showerror("Error", "La fecha 'Desde' no puede ser posterior a la fecha 'Hasta'.")
-                return
+                return None, None, None
             tipo = "personalizado"
         except ValueError:
             messagebox.showerror("Error", "Una de las fechas seleccionadas no es válida. Por favor, verifica.")
-            return
+            return None, None, None
 
+    return inicio, fin, tipo
+
+def iniciar_hilo_generar():
+    if not ruta_salida_var.get():
+        messagebox.showwarning("Advertencia", "Por favor selecciona una ruta de destino primero.")
+        return
+        
+    inicio, fin, tipo = obtener_parametros_periodo()
+    if inicio is None:
+        return
+
+    cancel_event.clear()
     deshabilitar_botones()
     progress_bar.start(10)  # Inicia la animación del loader
     hilo = threading.Thread(target=procesar_reporte, args=(inicio, fin, tipo))
+    hilo.start()
+
+def iniciar_hilo_generar_ambas():
+    inicio, fin, tipo = obtener_parametros_periodo()
+    if inicio is None:
+        return
+
+    cancel_event.clear()
+    deshabilitar_botones()
+    progress_bar.start(10)
+    hilo = threading.Thread(target=procesar_reporte_ambas, args=(inicio, fin, tipo))
     hilo.start()
 
 def iniciar_hilo_actualizar():
     if not ruta_salida_var.get():
         messagebox.showwarning("Advertencia", "Por favor selecciona una ruta de destino primero.")
         return
+    cancel_event.clear()
     deshabilitar_botones()
     progress_bar.start(10)
     hilo = threading.Thread(target=actualizar_data_solo)
@@ -417,12 +564,17 @@ def actualizar_data_solo():
     area_id = 1 if area_seleccionada == "SEWING" else 2
     try:
         estado_var.set(f"Descargando datos de {area_seleccionada}...")
-        descargar_excel_datos(area_id)
+        descargar_excel_datos(area_id, cancel_event=cancel_event)
         estado_var.set("Datos actualizados correctamente.")
         messagebox.showinfo("Éxito", f"Los datos de {area_seleccionada} se han descargado e integrado.")
+    except ProcesoCanceladoException:
+        estado_var.set("Proceso cancelado por el usuario.")
     except Exception as e:
-        estado_var.set("Error al actualizar datos.")
-        messagebox.showerror("Error", f"Ocurrió un error al descargar datos:\n{str(e)}")
+        if cancel_event.is_set():
+            estado_var.set("Proceso cancelado por el usuario.")
+        else:
+            estado_var.set("Error al actualizar datos.")
+            messagebox.showerror("Error", f"Ocurrió un error al descargar datos:\n{str(e)}")
     finally:
         app.after(0, detener_loader)
         app.after(0, habilitar_botones)
@@ -431,6 +583,7 @@ def detener_loader():
     progress_bar.stop()
 
 def deshabilitar_botones():
+    btn_generar_ambas.config(state=tk.DISABLED)
     btn_generar.config(state=tk.DISABLED)
     btn_actualizar.config(state=tk.DISABLED)
     btn_ruta.config(state=tk.DISABLED)
@@ -440,8 +593,10 @@ def deshabilitar_botones():
     cb_periodo.config(state=tk.DISABLED)
     for cb in lista_comboboxes_fechas:
         cb.config(state=tk.DISABLED)
+    btn_cancelar.config(state=tk.NORMAL)
 
 def habilitar_botones():
+    btn_generar_ambas.config(state=tk.NORMAL)
     btn_generar.config(state=tk.NORMAL)
     btn_actualizar.config(state=tk.NORMAL)
     btn_ruta.config(state=tk.NORMAL)
@@ -451,11 +606,12 @@ def habilitar_botones():
     cb_periodo.config(state="readonly")
     for cb in lista_comboboxes_fechas:
         cb.config(state="readonly")
+    btn_cancelar.config(state=tk.DISABLED)
 
 # --- CONFIGURACION VENTANA ---
 app = tk.Tk()
 app.title("Generador de Reportes")
-app.geometry("480x740")
+app.geometry("480x810")
 app.resizable(False, False)
 
 # --- VARIABLES ---
@@ -625,11 +781,17 @@ prox_run = calcular_proxima_ejecucion()
 lbl_auto_proxima_val.config(text=prox_run.strftime("%Y-%m-%d a las 07:50 AM"))
 
 # Botones de Acción
-btn_generar = ttk.Button(app, text="Generar Reporte", command=iniciar_hilo_generar)
-btn_generar.pack(fill="x", padx=50, pady=5)
+btn_generar_ambas = ttk.Button(app, text="✨ Generar Reportes (Ambas Áreas: Costura y Corte)", command=iniciar_hilo_generar_ambas)
+btn_generar_ambas.pack(fill="x", padx=50, pady=4)
+
+btn_generar = ttk.Button(app, text="Generar Reporte (Solo Área Seleccionada)", command=iniciar_hilo_generar)
+btn_generar.pack(fill="x", padx=50, pady=4)
 
 btn_actualizar = ttk.Button(app, text="Descargar / Actualizar Data (Últimos 2 Meses)", command=iniciar_hilo_actualizar)
-btn_actualizar.pack(fill="x", padx=50, pady=10)
+btn_actualizar.pack(fill="x", padx=50, pady=4)
+
+btn_cancelar = ttk.Button(app, text="🛑 Detener / Cancelar", command=cancelar_proceso, state=tk.DISABLED)
+btn_cancelar.pack(fill="x", padx=50, pady=4)
 
 # Barra de progreso (Loader)
 progress_bar = ttk.Progressbar(app, mode='indeterminate', length=200)
